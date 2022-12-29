@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+canvas {
+    border:1px solid #d3d3d3;
+    background-color: #000000;
+}
+
+
+</style>
+</head>
+<canvas id="Map_Area" width="400" height="400"></canvas>
+<body onload="startGame()" style='background-color: #000000'>
+
+<script>
+
+var myGamePiece;
+
+var Realm_Width = 500;
+var Realm_Height = 500;
+var Realm_Width = window.innerWidth - 50;
+//var Realm_Width = 600;
+var Realm_Height = window.innerHeight - 50;
+
+var Tier_Y_Gap = 25;
+var Tier_X_Gap = 0.25;
+
+var NNodes = new c_Node_Network();
+
+var flg_Update_Nodes = false;
+
+var Realm_MAX_Nodes = rand(5000) + 50;
+
+var Realm_Ran_Len = 25;
+var Realm_Ran = 2;
+
+function startGame() 
+{
+	let tmp_Range = rand(10) + 1;
+	let tmp_MAX = rand(50) + 10;
+    myGamePiece = new component(10, 3, "sky", 10, 120);
+    myGameArea.start();
+	
+	myGameArea.x = rand(Realm_Width);
+	myGameArea.y = rand(Realm_Height);
+	
+	let tmp_CAN = new c_CAN(this.NNodes, "0");
+	tmp_CAN.Build();
+	
+}
+
+var int2hex = function (p_Int) 
+{
+	let tmp_Hex = Number(p_Int).toString(16);
+	if (tmp_Hex.length <= 1)
+	{
+		tmp_Hex = "0" + tmp_Hex;
+	}
+	return tmp_Hex;
+};
+
+var rgb2hex = function(p_R, p_G, p_B) 
+{
+	return int2hex(p_R) + int2hex(p_G) + int2hex(p_B);
+};
+
+function rand(p_L) 
+{
+	return Math.floor(Math.random() * p_L);
+}
+
+function get_Distance(x1, y1, x2, y2)
+{
+	var a = x1 - x2;
+	var b = y1 - y2;
+	if (a < 0){ a *= -1; }
+	if (b < 0){ b *= -1; }
+	
+	var c = Math.sqrt( a*a + b*b );
+	
+	return c;
+}
+
+var myGameArea = 
+{
+    canvas : document.getElementById("Map_Area"),
+    start : function() 
+	{
+        this.canvas.width = Realm_Width;
+        this.canvas.height = Realm_Height;
+        this.canvas.style.cursor = "none"; //hide the original cursor
+        this.context = this.canvas.getContext("2d");
+        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
+        this.interval = setInterval(updateGameArea, 100);
+        window.addEventListener('mousedown', function (e) 
+		{
+            myGameArea.x = e.pageX;
+            myGameArea.y = e.pageY;
+        })
+        window.addEventListener('mouseup', function (e) 
+		{
+            myGameArea.x = false;
+            myGameArea.y = false;
+        })
+        window.addEventListener('touchstart', function (e) 
+		{
+            myGameArea.x = e.pageX;
+            myGameArea.y = e.pageY;
+        })
+        window.addEventListener('touchend', function (e) 
+		{
+            myGameArea.x = false;
+            myGameArea.y = false;
+        })
+        window.addEventListener('mousemove', function (e) 
+		{
+            myGameArea.px = e.pageX;
+            myGameArea.py = e.pageY;
+        })
+    }, 
+    clear : function(){
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+}
+function component(width, height, color, x, y) {
+    this.width = width;
+    this.height = height;
+    this.speedX = 0;
+    this.speedY = 0;    
+    this.x = x;
+    this.y = y;    
+    this.update = function() 
+	{
+        ctx = myGameArea.context;
+        ctx.fillStyle = color;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+}
+
+
+function c_Node(NID, x, y, Tier, Index) 
+{
+	this.NID = NID;
+	this.Current_Charge = 0.0;
+	this.Tier = Tier;
+	this.Index = Index;
+	
+	this.Reinforcement_Counter = 1.0;
+	
+	this.RGB = [ 0.0, 0.0, 0.0 ];
+	
+	//-Axons linking to the dendrites of higher nodes.
+
+	this.Axons = [];
+	
+	//Node that state nodes do not have two dendrites; rather they link   
+	 //to a single node or contain a unit of data.
+	//-Left Dendrite linking to a lower node.
+	//-Right Dendrite linking to a lower node.
+	
+	this.Dendrite_Left = -1;
+	this.Dendrite_Right = -1;
+		
+	//Normal nodes do not have a state, unless you store the entire 
+	 //pattern represented by each node with that node to allow for 
+	 //skipping the backpropagation saving on calculations.
+	
+	this.State = "undefined";
+	
+    this.radius = 1;
+    this.speedX = 0;
+    this.speedY = 0;
+	
+    this.x = x;
+    this.y = y;    
+	
+	this.color = "blue";
+	
+	this.Using_RC = 1;
+	
+	this.update = function() 
+	{
+		/*
+        ctx = myGameArea.context;
+		ctx.beginPath();
+		ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI, false);
+        ctx.fillStyle = "#" + rgb2hex(parseInt(this.Reinforcement_Counter), 0, parseInt(this.Reinforcement_Counter));
+		ctx.fill();
+		
+		ctx.lineWidth = 1;
+		ctx.strokeStyle = "#" + rgb2hex(parseInt(this.Reinforcement_Counter), parseInt(this.Reinforcement_Counter), parseInt(this.Reinforcement_Counter));
+		ctx.stroke();
+		ctx.lineWidth = 1;
+		*/
+    }
+	
+	//Adds to the nodes current charge, the Modifier charges role is 
+	 //to act as a filter of sorts. When using the RC charging you modify 
+	 //the input charge based upon the RC score. 
+	this.Add_To_Charge = function(p_Charge, p_Modifier_Charge)
+	{
+	   if (this.Using_RC)
+	   { 
+		  this.Current_Charge += (p_Charge * p_Modifier_Charge) * (this.Reinforcement_Counter / 100);  
+	   }
+	   if (!this.Using_RC)
+	   { 
+		  this.Current_Charge += p_Charge * p_Modifier_Charge;
+	   }
+	}
+	   
+
+	//Checks if the right dendrite value matches the given 
+	 //p_Right_Dendrite
+	this.Does_Right_Dendrite_Match = function(p_Right_Dendrite)
+	{
+	   if (this.Dendrite_Right == p_Right_Dendrite)
+	   {
+		  return this.NID;
+	   }
+	   else
+	   {
+		  return -1;
+	   }
+	}
+	
+	this.output = function()
+	{
+		console.log("");
+		console.log("Dendrite_L: ", this.Dendrite_Left, ", Dendrite_R: ", this.Dendrite_Right);
+		console.log("RC: ", this.Reinforcement_Counter);
+	}
+	
+	this.Reinforce = function()
+	{
+		this.Reinforcement_Counter = this.Reinforcement_Counter + ((1 - (this.Reinforcement_Counter / 100)) * 25);
+		this.output();
+	}
+}
+
+// sleep time expects milliseconds
+function sleep (time) {
+  return new Promise((resolve) => setTimeout(resolve, time));
+}
+
+// Usage!
+sleep(500).then(() => {
+    // Do something after the sleep!
+});
+
+
+	//====----------------------
+	//==--      Node Network
+	//====----------------------
+	
+
+function c_Node_Network() 
+{
+	//--== Contains:
+
+	//Nodes arranged in tiers
+	this.State_Nodes = [];
+	
+	this.Nodes = [];
+	
+	this.Highest_Node_Count = 0;
+	
+	//Track the current node count for each tier to place the nodes coherently.
+	this.Tier_Node_Count = new Array(50);
+	for (let cou_Tier=0;cou_Tier<this.Tier_Node_Count.length;cou_Tier++)
+	{
+		this.Tier_Node_Count[cou_Tier] = 0;
+	}
+	
+	this.x = 0;
+	this.y = 0;
+
+	this.setting_Modifier_Charge = 1.1;
+	this.setting_Action_Potential_Threshold_Percentage = 0.1;
+	this.setting_Base_Charge = 250.0;
+	this.setting_Action_Potential_Threshold = this.setting_Action_Potential_Threshold_Percentage * this.setting_Base_Charge;
+	this.Using_RC = true;
+	this.setting_Leak_Charge = 0.99;
+	
+	this.X_Offset = 0;
+	
+	this.setting_MAX_Charge = 100;
+	
+	//--== Functions:
+
+	//Takes a unit of input data and returns the node that is associated 
+	 //with the unit of data. If no node currently exists for that unit of 
+	 //data then a new node is created and associated with the unit of 
+	 //data.
+	this.Get_State_Node = function(Given_State)
+	{
+		//Search nodes on state tier for Given_State
+		let tmp_Foundit = 0;
+		let tmp_Node = -1;
+		
+	   //console.log("");
+		
+		for (let cou_SNode = 0;cou_SNode < this.Nodes.length;cou_SNode++)
+		{
+			if (this.Nodes[cou_SNode].State == Given_State)
+			{
+				tmp_Foundit = 1;
+				tmp_Node = cou_SNode;
+			}
+		}
+		
+	   if (tmp_Foundit == 0)
+	   {
+		  //Create new state node with Given_State
+		  this.new_Node(0, Given_State);
+		  
+		  //Return the newly created node
+		  tmp_Node = this.Nodes.length - 1;
+		  //console.log("...Creating Node...");
+	   }
+	   
+	   //console.log("Current Node[", tmp_Node, "] at (", this.Nodes[tmp_Node].x, ", ", this.Nodes[tmp_Node].y, ")");
+	   
+	   return tmp_Node;
+	}
+	
+	this.new_Node = function(Tier, State)
+	{
+		let X = (this.x + (this.Tier_Node_Count[Tier] * Tier_X_Gap));
+		let Y = ((Tier_Y_Gap * Tier) + this.y);
+		
+		if (this.Highest_Node_Count < (this.Tier_Node_Count[Tier] + 1))
+		{
+			this.Highest_Node_Count = (this.Tier_Node_Count[Tier] + 1);
+			Tier_X_Gap = Realm_Width / this.Highest_Node_Count;
+		}
+		
+		if (this.Highest_Tier < Tier)
+		{
+			this.Highest_Tier = Tier;
+			Tier_Y_Gap = Realm_Height / this.Highest_Tier;
+		}
+		this.Nodes.push(new c_Node(this.Nodes.length, X, Y, Tier, this.Tier_Node_Count[Tier]));
+		
+		this.Tier_Node_Count[Tier]++;
+		
+		
+		
+		/*
+		//Outputs the tier counts to the console.
+		console.log("...//   Tier Node Counts   \\...");
+		for (let cou_Tier=0;cou_Tier<this.Tier_Node_Count.length;cou_Tier++)
+		{
+			if (this.Tier_Node_Count[cou_Tier] > 0)
+			{
+				console.log("Tier[", cou_Tier, "]: ", this.Tier_Node_Count[cou_Tier]);
+			}
+		}
+		*/
+		
+		var tmp_NID = this.Nodes.length - 1;
+		
+		if (State != "undefined")
+		{
+			this.Nodes[this.Nodes.length - 1].State = State;
+		}
+		
+		return tmp_NID;
+		
+	}
+	
+	//The same as Get_State_Node(), however, no node is created if the 
+	 //unit of data is not found.
+	this.Get_State_Node_For_Query = function(Given_State)
+	{ 
+		//Search nodes on state tier for Given_State
+		let tmp_Foundit = 0;
+		for (let cou_SNode = 0;cou_SNode < this.Nodes.length;cou_SNode++)
+		{
+			if (this.Nodes[cou_SNode].State == Given_State)
+			{
+				return cou_SNode;
+			}
+		}
+		
+		return "undefined";
+	}
+	
+	//Create a connection from p_From node to p_To node for the given 
+	 //dendrite.
+	this.Create_Connection = function(p_From, p_To, p_Dendrite)
+	{
+		//console.log(" [[[creating connection]]]: p_From ", p_From, " p_To ", p_To, " p_Dendrite ", p_Dendrite);
+		this.Nodes[p_From].Axons.push(p_To);
+		
+		if (p_Dendrite == "left")
+		{
+			this.Nodes[p_To].Dendrite_Left = p_From
+		}
+
+		if (p_Dendrite == "right")
+		{
+			this.Nodes[p_To].Dendrite_Right = p_From;
+		}
+	}
+   
+	
+	
+	//When the CAN is building it needs to know if there is a node on a 
+	 //higher tier linking two lower tier nodes together. This function 
+	 //searches for the linking node, if no node exists then one is 
+	 //created.
+	this.get_Upper_Tier_Connection = function(left_Node, right_Node)
+	{
+		//console.log("get_Upper_Tier_Connection = function(", left_Node, ", ", right_Node, ")");
+		
+		//tmp_UTC is the temporary upper tier connection stored as an integer representing it's ID and Index.
+		//Have to check the axons of the current left legged node for the right leg connection.
+		
+		let tmp_UTC = this.Does_Upper_Tier_Node_Exist(left_Node, right_Node);
+			
+		if (tmp_UTC != "undefined")
+		{
+			return tmp_UTC;
+		}
+		
+		
+		
+		//The tier of the node above these. It is assumed they will be the same tier. If not then it defaults to the tier on the leftmost leg.
+		var tmp_Tier = (this.Nodes[left_Node].Tier + 1);
+		
+		//console.log("  >>> creating new node on Tier [", tmp_Tier, "] with D_L: ", left_Node, " D_R: ", right_Node);
+		
+		tmp_UTC = this.new_Node(tmp_Tier, "undefined");
+		
+		//console.log("  >>> created with ID [", tmp_UTC, "]");
+		
+		this.Create_Connection(left_Node, tmp_UTC, "left");
+		this.Create_Connection(right_Node, tmp_UTC, "right");
+		
+		
+		return tmp_UTC;
+	}
+	
+	this.Does_Upper_Tier_Node_Exist = function(left_Node, right_Node)
+	{
+		if ((left_Node == "undefined") || (right_Node == "undefined"))
+		{
+			return "undefined";
+		}
+		//console.log("get_Upper_Tier_Connection = function(", left_Node, ", ", right_Node, ")");
+		
+		//tmp_UTC is the temporary upper tier connection stored as an integer representing it's ID and Index.
+		//Have to check the axons of the current left legged node for the right leg connection.
+		let tmp_UTC = -1
+		for (let cou_Node=0;cou_Node<(this.Nodes[left_Node].Axons.length);cou_Node++)
+		{
+			tmp_UTC = this.Nodes[this.Nodes[left_Node].Axons[cou_Node]].Does_Right_Dendrite_Match(right_Node);
+			
+			if (tmp_UTC >= 0)
+			{
+				return tmp_UTC;
+			}
+		}
+		
+		return "undefined";
+	}
+	
+	/*
+	//---No longer needed but preserved just in case. Currently the node checks from a call to it. May be better to go back to NNet doing the work and Node just being a data structure.
+	//When the CAN is building for a query this function searches for 
+	 //then returns the upper tier linking node, however, if one does not 
+	 //exist then false is returned instead of a node.
+	Node_ID Does_Upper_Tier_Connection_Exist(Node_ID left_Node, Node_ID right_Node)
+	{
+	   //The axons are an array of Node_IDs so they can be iterated 
+		//through. 
+	   for (every axon in the left_Node as Current_Axon)
+	   { 
+		  if (Does_Right_Dendrite_Match(Current_Axon))
+		  {
+			 return Current_Axon.Node_ID
+		  }
+	   }
+	}
+	*/
+	
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	
+	//The pattern represented by the node is backpropagated into an 
+	 //output suitable to hold it. This is done by using an algorithm to 
+	 //trace the lower legs in the correct order to retrieve the 
+	 //information originally used in the construction of the tree that the 
+	 //current node is at the top of.
+	this.Get_Node_Output_Pattern = function(p_Node)
+	{
+	   this.Backpropagate(p_Node);
+	} 
+
+	//The backpropagation is initiated at the topmost treetop node. During 
+	 //backpropagation the left dendrite is done slightly different than 
+	 //the right one. The left sends a signal down both of its dendrites; 
+	 //whereas the right one only sends a signal down its right dendrite. 
+	 //This creates a wave effect when plotted that outputs the pattern 
+	 //used to construct the tree exactly as it was input. This is why 
+	 //keeping dendrite order is so important; if we did not track dendrite 
+	 //order the output would be a meaningless mess.
+	this.Backpropagate = function(p_Node)
+	{
+	   //Start the process with p_Node.
+
+	   this.Backpropagate_Left(p_Node);
+	}
+
+	//Backpropagate a left dendrite linked node.
+	this.Backpropagate_Left = function(p_Node)
+	{
+	   //If a left dendrite exists then initiate a back propagation along 
+		//it, then Along the right side.
+
+	   //If no left dendrite exists then that means that this node is a 
+		//state node and the state should be output instead.
+
+	   if (this.Nodes[p_Node].Dendrite_Left >= 0)
+	   {
+		  this.Backpropagate_Left(this.Nodes[p_Node].Dendrite_Left)
+		  this.Backpropagate_Right(this.Nodes[p_Node].Dendrite_Right)
+	   }
+	   else
+	   {
+		  //Add this.Nodes[p_Node].State to the pattern output.
+		  //console.log("[", p_Node, "] \"", this.Nodes[p_Node].State, "\"");
+		  this.Nodes[p_Node].Charge *= 1.01;
+	   }
+	}
+
+	//Backpropagate_Right a right dendrite linked node.
+	this.Backpropagate_Right = function(p_Node)
+	{
+	   //If a right dendrite exists then initiate a back propagation 
+		//along it, then along the right side.
+
+	   //If no right leg exists then that means that this node is a state 
+		//node and the state should be output instead.
+
+	   if (this.Nodes[p_Node].Dendrite_Right >= 0)
+	   {
+		  this.Backpropagate_Right(this.Nodes[p_Node].Dendrite_Right)
+	   }
+	   else
+	   {
+		  //Add this.Nodes[p_Node].State to the pattern output.
+		  //console.log("[", p_Node, "] \"", this.Nodes[p_Node].State, "\"");
+		  this.Nodes[p_Node].Charge *= 1.01;
+	   }
+	}
+	
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	//XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+	//---------------------------------===============================================================================================================
+
+	
+	//Adds to the nodes current charge, if the charge is over the action 
+	 //potential threshold then it fires and sends a charge to all of the 
+	 //nodes its axons connect to in the higher tiers.
+	this.Add_Charge_To_Node = function(p_Node, p_Charge)
+	{  
+		let tmp_Node = this.Nodes[p_Node];
+		
+		if (tmp_Node == "undefined"){ return; }
+		//console.log("...Chargin...", tmp_Node.NID, " with charge of ", p_Charge, "...");
+		tmp_Node.Add_To_Charge(this.setting_Modifier_Charge, p_Charge);
+	}
+	
+	this.Charge_Node = function(p_Node)
+	{  
+		//console.log("Charging Node:", p_Node);
+		let tmp_Node = this.Nodes[p_Node];
+		
+		//console.log("......Charging Axons...", tmp_Node.Current_Charge, " >= ", this.setting_Action_Potential_Threshold, ".......");
+		//console.log("......Charging Axons...", (tmp_Node.Current_Charge >= this.setting_Action_Potential_Threshold), ".......");
+		if (tmp_Node.Current_Charge >= this.setting_Action_Potential_Threshold)
+		{
+			if (tmp_Node.Axons != "undefined")
+			{
+				for (let cou_Axon=0;cou_Axon<tmp_Node.Axons.length;cou_Axon++)
+				{
+					this.Add_Charge_To_Node(tmp_Node.Axons[cou_Axon], tmp_Node.Current_Charge);;
+				}
+			}
+			if (tmp_Node.Axons == "undefined")
+			{
+				NNet.Backpropagate(tmp_Node.NID);
+			}
+			//tmp_Node.Current_Charge -= 255;
+			//tmp_Node.Current_Charge -= this.setting_Base_Charge;
+			tmp_Node.Current_Charge = 0;
+		}
+	}
+	
+	this.update_Node = function(p_Node)
+	{	
+		this.Nodes[p_Node].update();
+		
+		let tmp_Node = this.Nodes[p_Node];
+		let tmp_X = 234;
+		let tmp_Y = 234;
+		
+		tmp_Node.Current_Charge *= this.setting_Leak_Charge;
+		
+		//console.log("tmp_Node to output: ", tmp_Node);
+		
+		if (tmp_Node.Dendrite_Left != -1)
+		{
+			ctx = myGameArea.context;
+			
+			//sleep(5);
+			
+			let tmp_R = parseInt(tmp_Node.Reinforcement_Counter + 50 + tmp_Node.RGB[0]);
+			let tmp_G = parseInt(tmp_Node.Current_Charge * 2 + tmp_Node.RGB[1]);
+			let tmp_B = parseInt(tmp_Node.Reinforcement_Counter + 50 + tmp_Node.RGB[2]);
+			
+			
+			if (tmp_R > this.setting_MAX_Charge){ tmp_R = this.setting_MAX_Charge; }
+			if (tmp_R < 0){ tmp_R = 0; }
+			
+			if (tmp_G > this.setting_MAX_Charge){ tmp_G = this.setting_MAX_Charge; }
+			if (tmp_G < 0){ tmp_G = 0; }
+			
+			if (tmp_B > this.setting_MAX_Charge){ tmp_B = this.setting_MAX_Charge; }
+			if (tmp_B < 0){ tmp_B = 0; }
+			
+			console.log("R ", tmp_R, " G ", tmp_G, " B ", tmp_B);
+	
+			ctx.lineWidth = .5;
+			
+			//ctx.strokeStyle = "#" + rgb2hex(parseInt(1 + tmp_Node.Reinforcement_Counter), rand(tmp_Node.Reinforcement_Counter), 0);
+			//ctx.strokeStyle = "#" + rgb2hex(parseInt(tmp_Node.Reinforcement_Counter + rand(1) - 1), parseInt(tmp_Node.Current_Charge), 0);
+			ctx.strokeStyle = "#" + rgb2hex(tmp_R, tmp_G, 0);
+			ctx.beginPath();
+			ctx.fillStyle = "black";
+			ctx.moveTo(tmp_Node.x, tmp_Node.y);
+			//console.log("      Node[", tmp_Node.NID, "] xy(", tmp_Node.x, ", ", tmp_Node.y, ")");
+			
+			//console.log("tmp_X = this.Nodes[", tmp_Node.Dendrite_Left, "].x");
+			tmp_X = this.Nodes[tmp_Node.Dendrite_Left].x;
+			tmp_Y = this.Nodes[tmp_Node.Dendrite_Left].y;
+			
+			//console.log("       D_L[",  tmp_Node.Dendrite_Left, "] xy(", tmp_X, ", ", tmp_Y, ")");
+			
+			ctx.lineTo(tmp_X, tmp_Y);
+			ctx.stroke();
+			
+			
+			//ctx.strokeStyle = "#" + rgb2hex(0, rand(tmp_Node.Reinforcement_Counter), parseInt(1 + tmp_Node.Reinforcement_Counter));
+			//ctx.strokeStyle = "#" + rgb2hex(0, parseInt(tmp_Node.Current_Charge), parseInt(tmp_Node.Reinforcement_Counter + rand(1) - 1));
+			ctx.strokeStyle = "#" + rgb2hex(0, tmp_G, tmp_B);
+			ctx.beginPath();
+			ctx.fillStyle = "black";
+			ctx.moveTo(tmp_Node.x, tmp_Node.y);
+			//console.log("      Node[", tmp_Node.NID, "] xy(", tmp_Node.x, ", ", tmp_Node.y, ")");
+			
+			tmp_X = this.Nodes[tmp_Node.Dendrite_Right].x;
+			tmp_Y = this.Nodes[tmp_Node.Dendrite_Right].y;
+			
+			//console.log("      D_R[", tmp_Node.Dendrite_Right, "] xy(", tmp_X, ", ", tmp_Y, ")");
+			
+			ctx.lineTo(tmp_X, tmp_Y);
+			ctx.stroke();
+		}
+		
+	}
+	
+	this.update = function()
+	{
+		let tmp_Update_Pos = false;
+		for (let cou_Tier=0;cou_Tier<this.Tier_Node_Count.length;cou_Tier++)
+		{
+			if (this.X_Offset < this.Tier_Node_Count[cou_Tier])
+			{
+				this.X_Offset = this.Tier_Node_Count[cou_Tier];
+				tmp_Update_Pos = true;
+			}
+		}
+		
+		if (tmp_Update_Pos == true)
+		{
+			let tmp_XO = this.X_Offset * Tier_X_Gap;
+			
+			for (let cou_Node=0;cou_Node<this.Nodes.length;cou_Node++)
+			{
+				let tmp_Node = this.Nodes[cou_Node];
+				//this.Nodes[cou_Node].x = ((this.Nodes[cou_Node].Index * 3) + ((this.X_Offset / 2) - (((this.Tier_Node_Count[this.Nodes[cou_Node].Tier] - this.Nodes[cou_Node].Index) * 3) / 2)));
+				tmp_Node.x = ((tmp_Node.Index * Tier_X_Gap) + ((tmp_XO / 2) - ((this.Tier_Node_Count[tmp_Node.Tier] * Tier_X_Gap) / 2)));
+			}
+		}
+		
+		for (let cou_Node=0;cou_Node<this.Nodes.length;cou_Node++)
+		{
+			this.Charge_Node((this.Nodes.length - cou_Node - 1));
+			this.update_Node((this.Nodes.length - cou_Node - 1));
+		}
+	}
+}
+
+
+
+//====----------------------------------------
+//==--      Current Active Nodes (CAN)
+//====----------------------------------------
+
+
+
+//The CAN is a temporary structure used as a scaffold for building, querying, and charging.
+//p_NNet is an instance of the object c_Node_Network, not an ID.
+function c_CAN(p_NNet, p_String)
+{
+	//resize expands the CAN to hold the ndoes.
+	
+	//
+	//--== Contains:
+
+	//The CAN requires access to the node networks members that allow for 
+	//-Access to the node network
+	this.NNet = p_NNet;
+
+	//The string the construct is built from.
+	this.Input_String = p_String;
+
+	//The node scaffold is a two dimensional array of Node_ID references. 
+	 //It is expanded to hold the construct necessary to represent the 
+	 //input pattern. The first index represents the height of the scaffold 
+	 //in tiers which is equal to the length of the input set. The number 
+	 //of nodes on each tier decreases with each step up the scaffold by 
+	 //one to form a pyramidal structure.
+	 
+	 
+	//A pattern forms a pyramidal tree structure where each tier 
+	//from bottom to the top has one less node than the tier below 
+	//it. When the top tier is reached only one node is left, this 
+	//is the treetop node.
+
+	this.Number_Of_Tiers = p_String.length;
+	
+	//console.log("___Creating CAN___");
+	//console.log("___String: \"", p_String, "\"___Tiers: ", this.Number_Of_Tiers, "___");
+	
+	this.Scaffold = new Array(this.Number_Of_Tiers);
+	
+	for (let cou_Tier=0;cou_Tier<this.Number_Of_Tiers;cou_Tier++)
+	{
+		//console.log("___cou_Tier: ", cou_Tier, "___Nodes On Tier: ", (this.Number_Of_Tiers - cou_Tier), "___");
+		
+		this.Scaffold[cou_Tier] = new Array(this.Number_Of_Tiers - cou_Tier);
+		
+		for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier);cou_Node++)
+		{
+			this.Scaffold[cou_Tier][cou_Node] = "undefined";
+			//console.log("______Scaffold[", cou_Tier, "][", cou_Node, "] = ", this.Scaffold[cou_Tier][cou_Node], "___");
+		}
+	}
+	
+
+
+	/*
+	--==  Example CAN with input of “1001”
+
+	//After Resize() with the length of 4 on an input.
+	0->  <_NULL_> <_NULL_> <_NULL_> <_NULL_>
+
+	1->  <_NULL_> <_NULL_> <_NULL_>
+
+	2->  <_NULL_> <_NULL_>
+
+	3->  <_NULL_>
+
+	//State layer has been filled.
+	0->  <_1_> <_2_> <_2_> <_1_>
+
+	1->  <_NULL_> <_NULL_> <_NULL_>
+
+	2->  <_NULL_> <_NULL_>
+
+	3->  <_NULL_>
+
+	//All upper tier nodes have been filled out.
+	0->  <_1_> <_2_> <_2_> <_1_>
+
+	1->  <_3_> <_4_> <_5_>
+
+	2->  <_6_> <_7_>
+
+	3->  <_8_>
+	*/
+	
+	
+	//--== Functions:
+	
+	
+	
+	//Fills out the entire CAN, using preexisting nodes where possible 
+	 //and creating new ones when needed.
+	this.Build = function()
+	{
+	   this.Fill_State();
+	   this.Build_Tiers_Full();
+	   
+	   if (this.NNet.Using_RC == true){ this.Reinforce(); };
+	}
+	
+	//Queries the CAN using the NULLCAN
+	this.Query = function()
+	{
+		this.Query_State();
+		this.Query_Tiers_Full();
+	}
+
+
+	//Gathers the state nodes associated with each unit of input.
+	this.Fill_State = function()
+	{ 
+	   //The state tier reads in the input so its length is equal to the 
+		//input length.
+		
+	   for (let cou_Data=0;cou_Data<this.Input_String.length;cou_Data++)
+	   {
+			//Each unit of input data corresponds to a node on the state 
+			//tier. So the input “101” has three nodes on the state tier.
+			//console.log("Getting State[", cou_Data, "] \"", this.Input_String[cou_Data], "\""); 
+
+			let tmp_Node = this.NNet.Get_State_Node(this.Input_String[cou_Data]);
+			//Set the current CAN reference node to hold the ID of the 
+			//upper tier connection gathered.
+			
+			this.Scaffold[0][cou_Data] = tmp_Node;
+			//this.Get_State_Node = function(Given_State, X, Y)
+	   }
+	}
+
+
+	//Gathers the state nodes associated with each unit of input.
+	this.Query_State = function()
+	{ 
+	   //The state tier reads in the input so its length is equal to the 
+		//input length.
+		
+	   for (let cou_Data=0;cou_Data<this.Input_String.length;cou_Data++)
+	   {
+			//Each unit of input data corresponds to a node on the state 
+			//tier. So the input “101” has three nodes on the state tier.
+			//console.log("Getting State[", cou_Data, "] \"", this.Input_String[cou_Data], "\""); 
+
+			let tmp_Node = this.NNet.Get_State_Node_For_Query(this.Input_String[cou_Data]);
+			//Set the current CAN reference node to hold the ID of the 
+			//upper tier connection gathered.
+			
+			this.Scaffold[0][cou_Data] = tmp_Node;
+			//this.Get_State_Node = function(Given_State, X, Y)
+	   }
+	}
+
+
+	//Builds the node tiers after the input has been read in as state 
+	 //nodes.
+	this.Query_Tiers_Full = function()
+	{ 
+	   //The tree build from the pattern culminates in a single node, 
+		//this node is the treetop node. We do not go to this tier when 
+		//building because to do so would be requesting a node for a tier 
+		//higher than the highest tier in the current tree.
+		
+		this.Output();
+		
+	   for (let cou_Tier=0;cou_Tier<(this.Number_Of_Tiers - 1);cou_Tier++)
+	   {
+		  //Each node has two lower connections with the exception of the 
+		   //state tier, because of this we do not search from one end of 
+		   //the tier to the other. If we were to go to the end node we 
+		   //would have the end node as a left leg and no right leg to 
+		   //search for. 
+			
+		  for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier - 1);cou_Node++)
+		  {
+			 //Assuming the nodes are in an array the current node may be 
+			  //at index 
+			  //Nodes_In_Current_Tier[Current_Node] 
+			  //While the next node may be at
+			  //Nodes_In_Current_Tier[Current_Node + 1].
+			 
+			 //Nodes are returned as NID integer indexes.
+			 let tmp_Left = this.Scaffold[cou_Tier][cou_Node];
+			 let tmp_Right = this.Scaffold[cou_Tier][cou_Node + 1];
+			 
+			 //console.log("___CAN Node[", (cou_Tier + 1), "][", cou_Node, "]: ", this.Scaffold[cou_Tier + 1][cou_Node]);
+			 
+			 let tmp_Node = this.NNet.Does_Upper_Tier_Node_Exist(tmp_Left, tmp_Right);
+			 //Set the current CAN reference node to hold the ID of the 
+			  //upper tier connection gathered.
+			 this.Scaffold[cou_Tier + 1][cou_Node] = tmp_Node;
+			 
+			 //console.log("___CAN Node[", (cou_Tier + 1), "][", cou_Node, "]: ", this.Scaffold[cou_Tier + 1][cou_Node]);
+		  }
+	   }
+	}
+	
+	//Builds the node tiers after the input has been read in as state 
+	 //nodes.
+	this.Build_Tiers_Full = function()
+	{ 
+	   //The tree build from the pattern culminates in a single node, 
+		//this node is the treetop node. We do not go to this tier when 
+		//building because to do so would be requesting a node for a tier 
+		//higher than the highest tier in the current tree.
+		
+		this.Output();
+		
+	   for (let cou_Tier=0;cou_Tier<(this.Number_Of_Tiers - 1);cou_Tier++)
+	   {
+		  //Each node has two lower connections with the exception of the 
+		   //state tier, because of this we do not search from one end of 
+		   //the tier to the other. If we were to go to the end node we 
+		   //would have the end node as a left leg and no right leg to 
+		   //search for. 
+			
+		  for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier - 1);cou_Node++)
+		  {
+			 //Assuming the nodes are in an array the current node may be 
+			  //at index 
+			  //Nodes_In_Current_Tier[Current_Node] 
+			  //While the next node may be at
+			  //Nodes_In_Current_Tier[Current_Node + 1].
+			 
+			 //Nodes are returned as NID integer indexes.
+			 let tmp_Left = this.Scaffold[cou_Tier][cou_Node];
+			 let tmp_Right = this.Scaffold[cou_Tier][cou_Node + 1];
+			 
+			 //console.log("___CAN Node[", (cou_Tier + 1), "][", cou_Node, "]: ", this.Scaffold[cou_Tier + 1][cou_Node]);
+			 
+			 let tmp_Node = this.NNet.get_Upper_Tier_Connection(tmp_Left, tmp_Right);
+			 //Set the current CAN reference node to hold the ID of the 
+			  //upper tier connection gathered.
+			 this.Scaffold[cou_Tier + 1][cou_Node] = tmp_Node;
+			 
+			 //console.log("___CAN Node[", (cou_Tier + 1), "][", cou_Node, "]: ", this.Scaffold[cou_Tier + 1][cou_Node]);
+		  }
+	   }
+	}
+	
+	this.Output = function()
+	{
+		for (let cou_Tier=0;cou_Tier<this.Number_Of_Tiers;cou_Tier++)
+		{
+			for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier);cou_Node++)
+			{
+				//console.log("[", cou_Tier, "][", cou_Node, "]", this.Scaffold[cou_Tier][cou_Node]);
+			}
+		}
+	}
+	
+	/*
+	
+	//Fills out the CAN but only with preexisting nodes, it does not 
+	 create new ones.
+	void Query()
+	{
+	   Resize(Length of the current input)
+	   Fill_State()
+	   Build_Tiers_Full()
+	}
+	
+	//Gathers the state node associated with each unit of input, but does 
+	 not create them if they are not found. Used for building a query.
+	void Query_State()
+	{
+	   //The state tier reads in the input so its length is equal to the 
+		input length.
+
+	   for (Each unit of data in Input as Current_Input_Data_Unit)
+	   {
+		  //Each unit of input data corresponds to a node on the state 
+		   tier. So the input “101” has three nodes on the state tier. 
+		   The state tier is the lowest tier so it has an index of 0 
+		   (Scaffold[0]).
+		  
+		  Scaffold[0] [index of Current_Input_Data_Unit] = 
+		   Nodes.Get_State_Node_For_Query(Current_Input_Data_Unit) 
+	   }
+	}
+
+
+	//Builds the node tiers after the input has been read in as state 
+	 nodes but does not create new nodes.
+	void Build_Tiers_Query()
+	{
+	   //The tree build from the pattern culminates in a single node, 
+		this node is the treetop node. We do not go to this tier when 
+		building because to do so would be requesting a node for a tier 
+		higher than the highest tier in the current tree.
+
+	   for ((Number_Of_Tiers – 1) as Current_Tier)
+	   {
+		  //Each node has two lower connections with the exception of the 
+		   state tier, because of this we do not search from one end of 
+		   the tier to the other. If we were to go to the end node we 
+		   would have the end node as a left leg and no right leg to 
+		   search for. 
+		  
+		  for ((Number_Of_Nodes in Current_Tier) – 1 as Current_Node)
+		  {
+			 //Assuming the nodes are in an array the current node may be 
+			  at index 
+			  Nodes_In_Current_Tier[Current_Node] 
+			  While the next node may be at
+			  Nodes_In_Current_Tier[Current_Node + 1].
+			 
+			 Nodes.Does_Upper_Tier_Connection_Exist(Current_Node, 
+			  Next_Node)
+			 Set the current CAN reference node to hold the ID of the 
+			  upper tier connection gathered.
+		  }
+	   }
+	}
+	*/
+	//Reinforces the nodes currently in the CAN scaffold.
+	
+	this.Reinforce = function()
+	{
+		for (let cou_Tier=0;cou_Tier<this.Number_Of_Tiers;cou_Tier++)
+		{
+			for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier);cou_Node++)
+			{
+				//console.log("[", cou_Tier, "][", cou_Node, "]", this.Scaffold[cou_Tier][cou_Node]);
+				this.NNet.Nodes[this.Scaffold[cou_Tier][cou_Node]].Reinforce();
+				
+			}
+		}
+	}
+	
+	this.Charge = function()
+	{
+		for (let cou_Tier=0;cou_Tier<this.Number_Of_Tiers;cou_Tier++)
+		{
+			for (let cou_Node=0;cou_Node<(this.Number_Of_Tiers - cou_Tier);cou_Node++)
+			{
+				//console.log("[", cou_Tier, "][", cou_Node, "]", this.Scaffold[cou_Tier][cou_Node]);
+				if (this.Scaffold[cou_Tier][cou_Node] != "undefined")
+				{
+					this.NNet.Add_Charge_To_Node(this.Scaffold[cou_Tier][cou_Node], (this.NNet.setting_Base_Charge / 2));
+				}
+			}
+		}
+	}
+}
+
+
+var Game_Tick = 0;
+var tmp_RanSet = rand(10) + 1;
+function updateGameArea() 
+{
+    myGameArea.clear();
+	var tmp_Clicked = -1;
+	/*
+	previous_CMD = current_CMD;
+	
+	current_CMD = document.querySelector("#cmdinput");
+	if (current_CMD != previous_CMD)
+	{
+		console.log(current_CMD);
+	}
+	previous_CMD = current_CMD;
+	*/
+	
+	
+	
+	if ((Game_Tick == 1) && (this.NNodes.Nodes.length < Realm_MAX_Nodes))
+	{	
+		
+		let tmp_Input = [];
+		
+		for (let cou_Ran=0;cou_Ran<Realm_Ran_Len;cou_Ran++)
+		{
+			tmp_Input.push(rand(Realm_Ran));
+		}
+		
+		console.log(tmp_Input);
+		let tmp_CAN = new c_CAN(this.NNodes, tmp_Input);
+		tmp_CAN.Build();
+		tmp_CAN.Charge();
+		Game_Tick = 0;
+	}
+	
+	if ((Game_Tick == tmp_RanSet))
+	{	
+		//this.NNodes.Add_Charge_To_Node(0, (this.NNodes.setting_Base_Charge));
+		this.NNodes.Add_Charge_To_Node(rand(this.NNodes.Nodes.length - 1), (this.NNodes.setting_Base_Charge));
+		
+		let tmp_Input = [];
+		
+		for (let cou_Ran=0;cou_Ran<Realm_Ran_Len;cou_Ran++)
+		{
+			tmp_Input.push(rand(Realm_Ran));
+		}
+		
+		let tmp_CAN = new c_CAN(this.NNodes, tmp_Input);
+		tmp_CAN.Query();
+		tmp_CAN.Charge();
+		
+		Realm_RanSet = rand(10) + 1;
+		Game_Tick = 0;
+	}
+	
+	
+	Game_Tick++;
+	
+	NNodes.update();
+	
+    if (myGameArea.px && myGameArea.py) 
+	{
+        myGamePiece.x = myGameArea.px;
+        myGamePiece.y = myGameArea.py;
+    }
+	
+    if (myGameArea.x && myGameArea.y) 
+	{
+		if (tmp_Clicked == false)
+		{
+			if (current_TC >= 0)
+			{
+				
+			}
+			
+			if (!(myGameArea.x == tmp_Last_TC[0]) && !(myGameArea.x == tmp_Last_TC[1]))
+			{
+				 
+			}
+		}
+    }
+	
+	
+    
+	myGamePiece.update();
+	
+}
+
+
+</script>
+</body>
+</html>
